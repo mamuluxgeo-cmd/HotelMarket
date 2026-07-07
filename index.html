@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ka">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HotelMarket POS</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>HotelMarket POS</h1>
+      <p>სასტუმროს მარტივი სალარო Google Sheet ბაზით</p>
+    </div>
+    <div class="status" id="apiStatus">კავშირი მოწმდება...</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-page="cashier">სალარო</button>
+    <button class="tab" data-page="products">პროდუქცია / მარაგი</button>
+    <button class="tab" data-page="reports">დღის დახურვა</button>
+    <button class="tab" data-page="settings">ტესტი / პარამეტრები</button>
+  </nav>
+
+  <main>
+    <section id="cashier" class="page active">
+      <div class="grid two">
+        <div class="card">
+          <h2>პროდუქტის გატარება</h2>
+          <label>კოდი / შტრიხკოდი</label>
+          <input id="scanCode" class="big-input" placeholder="გაატარე ლაზერით ან ჩაწერე კოდი" autofocus>
+          <div class="row">
+            <div>
+              <label>რაოდენობა</label>
+              <input id="scanQty" type="number" min="1" step="1" value="1">
+            </div>
+            <button id="scanBtn" class="primary">კალათაში დამატება</button>
+          </div>
+          <div id="scanResult" class="notice"></div>
+        </div>
+
+        <div class="card">
+          <h2>გადახდა</h2>
+          <label>მოლარე / ოპერატორი</label>
+          <input id="cashierName" placeholder="მაგ: Reception">
+          <label>გადახდის ტიპი</label>
+          <select id="paymentType">
+            <option>ტერმინალი</option>
+            <option>ოთახზე დაწერა</option>
+            <option>ნაღდი</option>
+          </select>
+          <label id="roomLabel" class="hidden">ოთახის ნომერი</label>
+          <input id="roomNumber" class="hidden" placeholder="მაგ: 204">
+          <div class="totalBox">ჯამი: <strong id="cartTotal">0.00 ₾</strong></div>
+          <button id="finishSale" class="success full">გაყიდვის დასრულება</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>კალათა</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>კოდი</th><th>დასახელება</th><th>რაოდ.</th><th>ფასი</th><th>ჯამი</th><th></th></tr>
+            </thead>
+            <tbody id="cartBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="products" class="page">
+      <div class="grid two">
+        <div class="card">
+          <h2>პროდუქტის დამატება</h2>
+          <label>კოდი</label><input id="pCode" placeholder="შტრიხკოდი ან შიდა კოდი">
+          <label>დასახელება</label><input id="pName" placeholder="პროდუქტის დასახელება">
+          <div class="row">
+            <div><label>რაოდენობა</label><input id="pQty" type="number" step="0.01" value="0"></div>
+            <div><label>თვითღირებულება</label><input id="pCost" type="number" step="0.01" value="0"></div>
+          </div>
+          <label>გასაყიდი ფასი</label><input id="pPrice" type="number" step="0.01" value="0">
+          <button id="saveProduct" class="primary full">დამატება / განახლება</button>
+          <div id="productMsg" class="notice"></div>
+        </div>
+
+        <div class="card">
+          <h2>Excel / CSV ატვირთვა</h2>
+          <p class="muted">სვეტები: დასახელება, კოდი, რაოდენობა, თვითღირებულება, გასაყიდი ფასი</p>
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
+          <button id="importFile" class="primary full">ფაილის ატვირთვა მარაგებში</button>
+          <button id="downloadStock" class="ghost full">ნაშთების ჩამოტვირთვა CSV-ში</button>
+          <div id="importMsg" class="notice"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="between">
+          <h2>ბაზა / ნაშთები</h2>
+          <button id="refreshProducts" class="ghost">განახლება</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>კოდი</th><th>დასახელება</th><th>ნაშთი</th><th>საშ. თვითღირებულება</th><th>გასაყიდი ფასი</th><th>სტატუსი</th></tr>
+            </thead>
+            <tbody id="productsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>ნაშთის კორექტირება</h2>
+        <div class="grid four">
+          <div><label>კოდი</label><input id="adjCode"></div>
+          <div><label>ახალი ნაშთი</label><input id="adjQty" type="number" step="0.01"></div>
+          <div><label>კომენტარი</label><input id="adjComment" placeholder="მაგ: გადათვლა"></div>
+          <button id="adjustStock" class="warning">კორექტირება</button>
+        </div>
+        <div id="adjustMsg" class="notice"></div>
+      </div>
+    </section>
+
+    <section id="reports" class="page">
+      <div class="card">
+        <h2>დღის ანგარიში</h2>
+        <div class="row">
+          <div><label>თარიღი</label><input id="reportDate" type="date"></div>
+          <button id="loadReport" class="primary">ანგარიშის ჩვენება</button>
+          <button id="closeDay" class="success">დღის დახურვა</button>
+        </div>
+        <div id="reportMsg" class="notice"></div>
+      </div>
+
+      <div class="cards4">
+        <div class="metric"><span>სულ</span><strong id="rTotal">0.00 ₾</strong></div>
+        <div class="metric"><span>ტერმინალი</span><strong id="rTerminal">0.00 ₾</strong></div>
+        <div class="metric"><span>ოთახზე</span><strong id="rRoom">0.00 ₾</strong></div>
+        <div class="metric"><span>ნაღდი</span><strong id="rCash">0.00 ₾</strong></div>
+      </div>
+
+      <div class="grid two">
+        <div class="card">
+          <h2>გაყიდული პროდუქცია</h2>
+          <div class="table-wrap"><table><thead><tr><th>კოდი</th><th>დასახელება</th><th>რაოდ.</th><th>თანხა</th></tr></thead><tbody id="reportProducts"></tbody></table></div>
+        </div>
+        <div class="card">
+          <h2>ოთახებზე დარიცხვა</h2>
+          <div class="table-wrap"><table><thead><tr><th>ოთახი</th><th>თანხა</th></tr></thead><tbody id="reportRooms"></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="settings" class="page">
+      <div class="card">
+        <h2>სატესტო მონაცემების გასუფთავება</h2>
+        <p class="muted">ტესტების დასრულების შემდეგ გამოიყენე. დადასტურებისთვის ველში ჩაწერე RESET.</p>
+        <label>რეჟიმი</label>
+        <select id="resetMode">
+          <option value="salesOnly">მხოლოდ გაყიდვები და დღის დახურვები</option>
+          <option value="salesAndStock">გაყიდვები + ნაშთების განულება</option>
+          <option value="all">ყველაფერი, პროდუქციიანად</option>
+        </select>
+        <label>დადასტურება</label>
+        <input id="resetConfirm" placeholder="RESET">
+        <button id="resetBtn" class="danger full">გასუფთავება</button>
+        <button id="setupBtn" class="ghost full">Sheet-ის სტრუქტურის შემოწმება / შექმნა</button>
+        <div id="settingsMsg" class="notice"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
