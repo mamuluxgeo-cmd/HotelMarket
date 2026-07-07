@@ -52,13 +52,14 @@
           <label>მოლარე / ოპერატორი</label>
           <input id="cashierName" placeholder="მაგ: Reception">
           <label>გადახდის ტიპი</label>
-          <select id="paymentType">
-            <option>ტერმინალი</option>
-            <option>ოთახზე დაწერა</option>
-            <option>ნაღდი</option>
+          <select id="paymentType" required>
+            <option value="">აირჩიე გადახდის ტიპი</option>
+            <option value="ტერმინალი">ტერმინალი</option>
+            <option value="ოთახზე დაწერა">ოთახზე დაწერა</option>
+            <option value="ნაღდი">ნაღდი</option>
           </select>
           <label id="roomLabel" class="hidden">ოთახის ნომერი</label>
-          <input id="roomNumber" class="hidden" placeholder="მაგ: 204">
+          <select id="roomNumber" class="hidden"></select>
           <div class="totalBox">ჯამი: <strong id="cartTotal">0.00 ₾</strong></div>
           <button id="finishSale" class="success full">გაყიდვის დასრულება</button>
         </div>
@@ -132,7 +133,7 @@
     <section id="reports" class="page">
       <div class="card">
         <h2>დღის ანგარიში</h2>
-        <div class="row">
+        <div class="row report-actions">
           <div><label>თარიღი</label><input id="reportDate" type="date"></div>
           <button id="loadReport" class="primary">ანგარიშის ჩვენება</button>
           <button id="closeDay" class="success">დღის დახურვა</button>
@@ -141,10 +142,16 @@
       </div>
 
       <div class="cards4">
-        <div class="metric"><span>სულ</span><strong id="rTotal">0.00 ₾</strong></div>
+        <div class="metric"><span>სულ გაყიდვა</span><strong id="rTotal">0.00 ₾</strong></div>
         <div class="metric"><span>ტერმინალი</span><strong id="rTerminal">0.00 ₾</strong></div>
-        <div class="metric"><span>ოთახზე</span><strong id="rRoom">0.00 ₾</strong></div>
+        <div class="metric"><span>ოთახზე დაწერა</span><strong id="rRoom">0.00 ₾</strong></div>
         <div class="metric"><span>ნაღდი</span><strong id="rCash">0.00 ₾</strong></div>
+      </div>
+
+      <div class="cards3">
+        <div class="metric"><span>ოთახებიდან გადახდილი დღეს</span><strong id="rRoomPaid">0.00 ₾</strong></div>
+        <div class="metric"><span>ოთახები ქეშით</span><strong id="rRoomPaidCash">0.00 ₾</strong></div>
+        <div class="metric"><span>ოთახები ბარათით</span><strong id="rRoomPaidCard">0.00 ₾</strong></div>
       </div>
 
       <div class="grid two">
@@ -156,6 +163,23 @@
           <h2>ოთახებზე დარიცხვა</h2>
           <div class="table-wrap"><table><thead><tr><th>ოთახი</th><th>თანხა</th></tr></thead><tbody id="reportRooms"></tbody></table></div>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="between">
+          <h2>ოთახების მიმდინარე დავალიანება</h2>
+          <button id="loadRoomBalances" class="ghost">განახლება</button>
+        </div>
+        <div class="totalDebtBox">სულ დავალიანება: <strong id="roomDebtTotal">0.00 ₾</strong></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>ოთახი</th><th>დავალიანება</th><th>ჩანაწერები</th><th>გადახდის ტიპი</th><th>განულება</th></tr>
+            </thead>
+            <tbody id="roomBalancesBody"></tbody>
+          </table>
+        </div>
+        <div id="roomBalanceMsg" class="notice"></div>
       </div>
     </section>
   </main>
