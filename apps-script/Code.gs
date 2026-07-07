@@ -1,7 +1,7 @@
 const CONFIG = {
   SPREADSHEET_ID: '1-H1lwHr_J8_ITwiI0JDOj9tb-uFSdItetkXj1d5P67U',
   TIMEZONE: 'Asia/Tbilisi',
-  VERSION: '1.0.0'
+  VERSION: '1.0.1'
 };
 
 const SHEET_NAMES = {
@@ -23,6 +23,60 @@ const HEADERS = {
   DailyClosing: ['დახურვის ID', 'თარიღი', 'დახურვის დრო', 'სულ გაყიდვა', 'ტერმინალი', 'ოთახზე დაწერა', 'ნაღდი', 'გაყიდული რაოდენობა', 'მოლარე', 'კომენტარი'],
   Settings: ['Key', 'Value']
 };
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('HotelMarket')
+    .addItem('ბაზის მომზადება / შემოწმება', 'setupDatabaseFromMenu')
+    .addSeparator()
+    .addSubMenu(
+      ui.createMenu('სატესტოს გასუფთავება')
+        .addItem('მხოლოდ გაყიდვები და დღის დახურვები', 'resetSalesOnlyFromMenu')
+        .addItem('გაყიდვები + ნაშთების განულება', 'resetSalesAndStockFromMenu')
+        .addItem('ყველაფერი, პროდუქციიანად', 'resetAllFromMenu')
+    )
+    .addToUi();
+}
+
+function setupDatabaseFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = setupDatabase();
+    ui.alert('შესრულდა', result.message || 'ბაზა მზად არის', ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert('შეცდომა', String(err && err.message ? err.message : err), ui.ButtonSet.OK);
+  }
+}
+
+function resetSalesOnlyFromMenu() {
+  resetFromMenu_('salesOnly', 'მხოლოდ გაყიდვები და დღის დახურვები');
+}
+
+function resetSalesAndStockFromMenu() {
+  resetFromMenu_('salesAndStock', 'გაყიდვები + ნაშთების განულება');
+}
+
+function resetAllFromMenu() {
+  resetFromMenu_('all', 'ყველაფერი, პროდუქციიანად');
+}
+
+function resetFromMenu_(mode, title) {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt(
+    'სატესტოს გასუფთავება',
+    title + '\n\nდადასტურებისთვის ჩაწერე RESET',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  try {
+    const result = resetTestData({ mode: mode, confirmText: response.getResponseText().trim() });
+    ui.alert('შესრულდა', result.message || 'ოპერაცია დასრულდა', ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert('შეცდომა', String(err && err.message ? err.message : err), ui.ButtonSet.OK);
+  }
+}
 
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {};
@@ -60,7 +114,6 @@ function route_(action, payload) {
     case 'getDailyReport': return getDailyReport(payload);
     case 'closeDay': return closeDay(payload);
     case 'adjustStock': return adjustStock(payload);
-    case 'resetTestData': return resetTestData(payload);
     default: throw new Error('Unknown action: ' + action);
   }
 }
@@ -472,7 +525,7 @@ function resetTestData(payload) {
       clearBody_(sheet_(SHEET_NAMES.ROOM_CHARGES));
       clearBody_(sheet_(SHEET_NAMES.DAILY_CLOSING));
     }
-    return ok_({ mode: mode, message: 'Test data reset completed' });
+    return ok_({ mode: mode, message: 'სატესტო მონაცემები გასუფთავდა' });
   } finally {
     lock.releaseLock();
   }
