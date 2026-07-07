@@ -49,6 +49,11 @@ function setLoading(btn, loading) {
   btn.disabled = loading;
 }
 
+function on(id, eventName, handler) {
+  const el = $(id);
+  if (el) el.addEventListener(eventName, handler);
+}
+
 async function checkApi() {
   const status = $('apiStatus');
   try {
@@ -86,6 +91,7 @@ async function refreshProducts() {
 
 function renderProducts() {
   const body = $('productsBody');
+  if (!body) return;
   body.innerHTML = '';
   products.forEach((p) => {
     const tr = document.createElement('tr');
@@ -124,6 +130,7 @@ function addToCart(product, qty) {
 
 function renderCart() {
   const body = $('cartBody');
+  if (!body) return;
   body.innerHTML = '';
   let total = 0;
   cart.forEach((item, idx) => {
@@ -377,47 +384,22 @@ async function closeDay() {
   }
 }
 
-async function resetTestData() {
-  try {
-    const res = await api('resetTestData', {
-      mode: $('resetMode').value,
-      confirmText: $('resetConfirm').value.trim()
-    });
-    setNotice('settingsMsg', res.message, 'ok');
-    await refreshProducts();
-  } catch (err) {
-    setNotice('settingsMsg', err.message, 'bad');
-  }
-}
-
-async function setupDb() {
-  try {
-    const res = await api('setupDatabase');
-    setNotice('settingsMsg', res.message || 'Sheet მზად არის', 'ok');
-    await refreshProducts();
-  } catch (err) {
-    setNotice('settingsMsg', err.message, 'bad');
-  }
-}
-
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
 }
 
 function bindEvents() {
-  $('scanBtn').addEventListener('click', scanProduct);
-  $('scanCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') scanProduct(); });
-  $('finishSale').addEventListener('click', finishSale);
-  $('saveProduct').addEventListener('click', saveProduct);
-  $('importFile').addEventListener('click', importFile);
-  $('downloadStock').addEventListener('click', downloadStock);
-  $('refreshProducts').addEventListener('click', refreshProducts);
-  $('adjustStock').addEventListener('click', adjustStock);
-  $('loadReport').addEventListener('click', loadReport);
-  $('closeDay').addEventListener('click', closeDay);
-  $('resetBtn').addEventListener('click', resetTestData);
-  $('setupBtn').addEventListener('click', setupDb);
-  $('paymentType').addEventListener('change', () => {
+  on('scanBtn', 'click', scanProduct);
+  on('scanCode', 'keydown', (e) => { if (e.key === 'Enter') scanProduct(); });
+  on('finishSale', 'click', finishSale);
+  on('saveProduct', 'click', saveProduct);
+  on('importFile', 'click', importFile);
+  on('downloadStock', 'click', downloadStock);
+  on('refreshProducts', 'click', refreshProducts);
+  on('adjustStock', 'click', adjustStock);
+  on('loadReport', 'click', loadReport);
+  on('closeDay', 'click', closeDay);
+  on('paymentType', 'change', () => {
     const show = $('paymentType').value === 'ოთახზე დაწერა';
     $('roomLabel').classList.toggle('hidden', !show);
     $('roomNumber').classList.toggle('hidden', !show);
