@@ -20,7 +20,6 @@
     <button class="tab active" data-page="cashier">სალარო</button>
     <button class="tab" data-page="products">პროდუქცია / მარაგი</button>
     <button class="tab" data-page="reports">დღის დახურვა</button>
-    <button class="tab" data-page="settings">ტესტი / პარამეტრები</button>
   </nav>
 
   <main>
@@ -149,24 +148,6 @@
           <h2>ოთახებზე დარიცხვა</h2>
           <div class="table-wrap"><table><thead><tr><th>ოთახი</th><th>თანხა</th></tr></thead><tbody id="reportRooms"></tbody></table></div>
         </div>
-      </div>
-    </section>
-
-    <section id="settings" class="page">
-      <div class="card">
-        <h2>სატესტო მონაცემების გასუფთავება</h2>
-        <p class="muted">ტესტების დასრულების შემდეგ გამოიყენე. დადასტურებისთვის ველში ჩაწერე RESET.</p>
-        <label>რეჟიმი</label>
-        <select id="resetMode">
-          <option value="salesOnly">მხოლოდ გაყიდვები და დღის დახურვები</option>
-          <option value="salesAndStock">გაყიდვები + ნაშთების განულება</option>
-          <option value="all">ყველაფერი, პროდუქციიანად</option>
-        </select>
-        <label>დადასტურება</label>
-        <input id="resetConfirm" placeholder="RESET">
-        <button id="resetBtn" class="danger full">გასუფთავება</button>
-        <button id="setupBtn" class="ghost full">Sheet-ის სტრუქტურის შემოწმება / შექმნა</button>
-        <div id="settingsMsg" class="notice"></div>
       </div>
     </section>
   </main>
