@@ -2,6 +2,8 @@ const HM_API_URL = 'https://script.google.com/macros/s/AKfycbwqc-d9leOrTtWSxpHKS
 
 let products = [];
 let cart = [];
+let currentSuggestions = [];
+let activeSuggestionIndex = -1;
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => `${Number(n || 0).toFixed(2)} ₾`;
@@ -73,6 +75,7 @@ function initTabs() {
       document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
       $(btn.dataset.page).classList.add('active');
+      hideSuggestions();
       if (btn.dataset.page === 'products') refreshProducts();
       if (btn.dataset.page === 'reports') loadReport();
     });
@@ -100,6 +103,105 @@ function renderProducts() {
   });
 }
 
+function normalizeText(value) {
+  return String(value ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function findProductsByQuery(query) {
+  const q = normalizeText(query);
+  if (!q) return [];
+  const parts = q.split(' ').filter(Boolean);
+
+  return products
+    .filter((p) => p.status !== 'არააქტიური')
+    .filter((p) => {
+      const code = normalizeText(p.code);
+      const name = normalizeText(p.name);
+      const full = `${code} ${name}`;
+      return parts.every((part) => full.includes(part));
+    })
+    .sort((a, b) => {
+      const aqCode = normalizeText(a.code).startsWith(q) ? 0 : 1;
+      const bqCode = normalizeText(b.code).startsWith(q) ? 0 : 1;
+      if (aqCode !== bqCode) return aqCode - bqCode;
+      const aqName = normalizeText(a.name).startsWith(q) ? 0 : 1;
+      const bqName = normalizeText(b.name).startsWith(q) ? 0 : 1;
+      if (aqName !== bqName) return aqName - bqName;
+      return normalizeText(a.name).localeCompare(normalizeText(b.name));
+    })
+    .slice(0, 10);
+}
+
+function handleProductSearch() {
+  const q = $('productSearch').value.trim();
+  currentSuggestions = findProductsByQuery(q);
+  activeSuggestionIndex = -1;
+  renderSuggestions();
+}
+
+function renderSuggestions() {
+  const box = $('productSuggestions');
+  if (!box) return;
+  box.innerHTML = '';
+
+  if (!currentSuggestions.length) {
+    box.classList.add('hidden');
+    return;
+  }
+
+  currentSuggestions.forEach((p, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `suggestion-item ${index === activeSuggestionIndex ? 'active' : ''}`;
+    btn.dataset.code = p.code;
+    btn.innerHTML = `
+      <span>
+        <span class="suggestion-title">${escapeHtml(p.name)}</span>
+        <span class="suggestion-meta">კოდი: ${escapeHtml(p.code)} · ნაშთი: ${p.stock}</span>
+      </span>
+      <span class="suggestion-price">${money(p.salePrice)}</span>`;
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      selectSuggestion(index);
+    });
+    box.appendChild(btn);
+  });
+
+  box.classList.remove('hidden');
+}
+
+function moveSuggestion(direction) {
+  if (!currentSuggestions.length) return;
+  activeSuggestionIndex += direction;
+  if (activeSuggestionIndex < 0) activeSuggestionIndex = currentSuggestions.length - 1;
+  if (activeSuggestionIndex >= currentSuggestions.length) activeSuggestionIndex = 0;
+  renderSuggestions();
+}
+
+function selectSuggestion(index) {
+  const product = currentSuggestions[index];
+  if (!product) return;
+  const qty = Number($('scanQty').value || 1);
+  if (qty <= 0) return setNotice('scanResult', 'რაოდენობა არასწორია', 'bad');
+  if (Number(product.stock) < qty) return setNotice('scanResult', `ნაშთი არ არის საკმარისი. დარჩენილია: ${product.stock}`, 'bad');
+
+  addToCart(product, qty);
+  $('productSearch').value = '';
+  hideSuggestions();
+  setNotice('scanResult', `${product.name} დაემატა კალათაში`, 'ok');
+  $('productSearch').focus();
+}
+
+function hideSuggestions() {
+  currentSuggestions = [];
+  activeSuggestionIndex = -1;
+  const box = $('productSuggestions');
+  if (box) {
+    box.innerHTML = '';
+    box.classList.add('hidden');
+  }
+}
+
 async function scanProduct() {
   const code = $('scanCode').value.trim();
   const qty = Number($('scanQty').value || 1);
@@ -107,9 +209,13 @@ async function scanProduct() {
   if (qty <= 0) return setNotice('scanResult', 'რაოდენობა არასწორია', 'bad');
 
   try {
-    const res = await api('getProduct', { code });
-    if (!res.found) return setNotice('scanResult', 'პროდუქტი ვერ მოიძებნა', 'bad');
-    const p = res.product;
+    let local = products.find((p) => String(p.code).trim() === code);
+    let p = local;
+    if (!p) {
+      const res = await api('getProduct', { code });
+      if (!res.found) return setNotice('scanResult', 'პროდუქტი ვერ მოიძებნა', 'bad');
+      p = res.product;
+    }
     if (Number(p.stock) < qty) return setNotice('scanResult', `ნაშთი არ არის საკმარისი. დარჩენილია: ${p.stock}`, 'bad');
     addToCart(p, qty);
     $('scanCode').value = '';
@@ -389,6 +495,21 @@ function escapeHtml(s) {
 }
 
 function bindEvents() {
+  on('productSearch', 'input', handleProductSearch);
+  on('productSearch', 'focus', handleProductSearch);
+  on('productSearch', 'keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggestion(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggestion(-1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (currentSuggestions.length) selectSuggestion(activeSuggestionIndex >= 0 ? activeSuggestionIndex : 0);
+    } else if (e.key === 'Escape') hideSuggestions();
+  });
+  document.addEventListener('click', (e) => {
+    const box = document.querySelector('.search-box');
+    if (box && !box.contains(e.target)) hideSuggestions();
+  });
+
   on('scanBtn', 'click', scanProduct);
   on('scanCode', 'keydown', (e) => { if (e.key === 'Enter') scanProduct(); });
   on('finishSale', 'click', finishSale);
