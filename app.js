@@ -1,5 +1,13 @@
 const HM_API_URL = 'https://script.google.com/macros/s/AKfycbwqc-d9leOrTtWSxpHKSqgw_F3OWh4BIP4zxgButlVkmwpKG6FaQOL0VAqQZNzhQgLEbQ/exec';
 
+const ROOM_NUMBERS = [
+  '101', '102', '103', '104',
+  '201', '202', '203', '204',
+  '301', '302', '303', '304',
+  '401', '402', '403', '404',
+  '501', '502', '503', '504'
+];
+
 let products = [];
 let cart = [];
 let currentSuggestions = [];
@@ -77,9 +85,19 @@ function initTabs() {
       $(btn.dataset.page).classList.add('active');
       hideSuggestions();
       if (btn.dataset.page === 'products') refreshProducts();
-      if (btn.dataset.page === 'reports') loadReport();
+      if (btn.dataset.page === 'reports') {
+        loadReport();
+        loadRoomBalances();
+      }
     });
   });
+}
+
+function fillRoomSelects() {
+  const roomSelect = $('roomNumber');
+  if (roomSelect) {
+    roomSelect.innerHTML = '<option value="">აირჩიე ოთახი</option>' + ROOM_NUMBERS.map((room) => `<option value="${room}">${room}</option>`).join('');
+  }
 }
 
 async function refreshProducts() {
@@ -272,7 +290,8 @@ async function finishSale() {
   if (!cart.length) return setNotice('scanResult', 'კალათა ცარიელია', 'bad');
   const paymentType = $('paymentType').value;
   const room = $('roomNumber').value.trim();
-  if (paymentType === 'ოთახზე დაწერა' && !room) return setNotice('scanResult', 'ოთახის ნომერი აუცილებელია', 'bad');
+  if (!paymentType) return setNotice('scanResult', 'გადახდის ტიპი აირჩიე', 'bad');
+  if (paymentType === 'ოთახზე დაწერა' && !room) return setNotice('scanResult', 'ოთახის ნომერი აირჩიე', 'bad');
 
   const btn = $('finishSale');
   setLoading(btn, true);
@@ -286,6 +305,7 @@ async function finishSale() {
     cart = [];
     renderCart();
     await refreshProducts();
+    await loadRoomBalances();
     setNotice('scanResult', `გაყიდვა დასრულდა. ჯამი: ${money(res.total)}`, 'ok');
   } catch (err) {
     setNotice('scanResult', err.message, 'bad');
@@ -452,6 +472,9 @@ async function loadReport() {
     $('rTerminal').textContent = money(res.byPayment['ტერმინალი'] || 0);
     $('rRoom').textContent = money(res.byPayment['ოთახზე დაწერა'] || 0);
     $('rCash').textContent = money(res.byPayment['ნაღდი'] || 0);
+    $('rRoomPaid').textContent = money(res.roomPayments?.total || 0);
+    $('rRoomPaidCash').textContent = money(res.roomPayments?.byPayment?.['ქეში'] || 0);
+    $('rRoomPaidCard').textContent = money(res.roomPayments?.byPayment?.['ბარათი'] || 0);
     renderReportTables(res);
     setNotice('reportMsg', `ნაჩვენებია ${date} დღის ანგარიში`, 'ok');
   } catch (err) {
@@ -485,8 +508,71 @@ async function closeDay() {
     });
     setNotice('reportMsg', `დღე დაიხურა. ჯამი: ${money(res.report.total)}`, 'ok');
     await loadReport();
+    await loadRoomBalances();
   } catch (err) {
     setNotice('reportMsg', err.message, 'bad');
+  }
+}
+
+async function loadRoomBalances() {
+  const body = $('roomBalancesBody');
+  if (!body) return;
+  try {
+    const res = await api('getRoomBalances');
+    renderRoomBalances(res.balances || [], res.total || 0);
+  } catch (err) {
+    setNotice('roomBalanceMsg', err.message, 'bad');
+  }
+}
+
+function renderRoomBalances(balances, total) {
+  const body = $('roomBalancesBody');
+  body.innerHTML = '';
+  $('roomDebtTotal').textContent = money(total || 0);
+
+  balances.forEach((item) => {
+    const hasDebt = Number(item.balance) > 0;
+    const tr = document.createElement('tr');
+    tr.className = hasDebt ? 'debt-row' : 'zero-row';
+    tr.innerHTML = `
+      <td>${escapeHtml(item.room)}</td>
+      <td><strong>${money(item.balance)}</strong></td>
+      <td>${item.itemsCount || 0}</td>
+      <td>
+        <select data-room-payment="${escapeHtml(item.room)}" ${hasDebt ? '' : 'disabled'}>
+          <option value="">აირჩიე</option>
+          <option value="ქეში">ქეში</option>
+          <option value="ბარათი">ბარათი</option>
+        </select>
+      </td>
+      <td><button class="success" data-settle-room="${escapeHtml(item.room)}" ${hasDebt ? '' : 'disabled'}>განულება</button></td>`;
+    body.appendChild(tr);
+  });
+
+  document.querySelectorAll('[data-settle-room]').forEach((btn) => {
+    btn.addEventListener('click', () => settleRoomDebt(btn.dataset.settleRoom));
+  });
+}
+
+async function settleRoomDebt(room) {
+  const select = document.querySelector(`[data-room-payment="${CSS.escape(room)}"]`);
+  const paymentType = select ? select.value : '';
+  if (!paymentType) return setNotice('roomBalanceMsg', 'აირჩიე ქეში ან ბარათი', 'bad');
+
+  const ok = window.confirm(`ნამდვილად გინდა ${room} ოთახის დავალიანების განულება ${paymentType}-ით?`);
+  if (!ok) return;
+
+  try {
+    const res = await api('settleRoomDebt', {
+      room,
+      paymentType,
+      cashier: $('cashierName').value.trim()
+    });
+    setNotice('roomBalanceMsg', `${room} ოთახი განულდა. თანხა: ${money(res.amount)} · ${paymentType}`, 'ok');
+    await loadRoomBalances();
+    await loadReport();
+  } catch (err) {
+    setNotice('roomBalanceMsg', err.message, 'bad');
   }
 }
 
@@ -520,18 +606,22 @@ function bindEvents() {
   on('adjustStock', 'click', adjustStock);
   on('loadReport', 'click', loadReport);
   on('closeDay', 'click', closeDay);
+  on('loadRoomBalances', 'click', loadRoomBalances);
   on('paymentType', 'change', () => {
     const show = $('paymentType').value === 'ოთახზე დაწერა';
     $('roomLabel').classList.toggle('hidden', !show);
     $('roomNumber').classList.toggle('hidden', !show);
+    if (!show) $('roomNumber').value = '';
   });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
+  fillRoomSelects();
   bindEvents();
   $('reportDate').value = new Date().toISOString().slice(0, 10);
   await checkApi();
   await refreshProducts();
+  await loadRoomBalances();
   renderCart();
 });
