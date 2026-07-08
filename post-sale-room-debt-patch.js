@@ -148,12 +148,21 @@ function hmInsertSalesHistoryUI() {
       <h2>გატარების ისტორია</h2>
       <button id="loadSalesHistory" class="primary">ჩამოქაჩვა</button>
     </div>
-    <label>თარიღი</label>
-    <input id="salesHistoryDate" type="date">
+    <div class="grid two history-period-grid">
+      <div>
+        <label>საწყისი თარიღი</label>
+        <input id="salesHistoryDateFrom" type="date">
+      </div>
+      <div>
+        <label>საბოლოო თარიღი</label>
+        <input id="salesHistoryDateTo" type="date">
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
+            <th>თარიღი</th>
             <th>დრო</th>
             <th>გატარება</th>
             <th>კოდი</th>
@@ -176,16 +185,19 @@ function hmInsertSalesHistoryUI() {
   else reportSection.appendChild(card);
 
   const today = new Date().toISOString().slice(0, 10);
-  $('salesHistoryDate').value = ($('reportDate') && $('reportDate').value) || today;
+  const reportDate = ($('reportDate') && $('reportDate').value) || today;
+  $('salesHistoryDateFrom').value = reportDate;
+  $('salesHistoryDateTo').value = reportDate;
   $('loadSalesHistory').addEventListener('click', loadSalesHistory);
 }
 
 async function loadSalesHistory() {
   try {
-    const date = $('salesHistoryDate')?.value || $('reportDate')?.value || new Date().toISOString().slice(0, 10);
-    const res = await api('getSalesHistory', { date });
+    const dateFrom = $('salesHistoryDateFrom')?.value || $('reportDate')?.value || new Date().toISOString().slice(0, 10);
+    const dateTo = $('salesHistoryDateTo')?.value || dateFrom;
+    const res = await api('getSalesHistory', { dateFrom, dateTo });
     renderSalesHistory(res.history || []);
-    setNotice('salesHistoryMsg', `ნაჩვენებია ${date} დღის გატარებები`, 'ok');
+    setNotice('salesHistoryMsg', `ნაჩვენებია ${dateFrom} - ${dateTo} პერიოდის გატარებები`, 'ok');
   } catch (err) {
     setNotice('salesHistoryMsg', err.message, 'bad');
   }
@@ -196,7 +208,7 @@ function renderSalesHistory(history) {
   if (!body) return;
   body.innerHTML = '';
   if (!history.length) {
-    body.innerHTML = '<tr><td colspan="10">ამ თარიღზე გატარებები არ არის</td></tr>';
+    body.innerHTML = '<tr><td colspan="11">ამ პერიოდში გატარებები არ არის</td></tr>';
     return;
   }
 
@@ -204,6 +216,7 @@ function renderSalesHistory(history) {
     const tr = document.createElement('tr');
     const shortId = row.saleId ? row.saleId.slice(0, 8) : '';
     tr.innerHTML = `
+      <td>${escapeHtml(row.date)}</td>
       <td>${escapeHtml(row.time)}</td>
       <td>${escapeHtml(shortId)}</td>
       <td>${escapeHtml(row.code)}</td>
@@ -221,7 +234,9 @@ function renderSalesHistory(history) {
 const hmOldLoadReport = loadReport;
 loadReport = async function () {
   await hmOldLoadReport();
-  if ($('salesHistoryDate') && $('reportDate')) $('salesHistoryDate').value = $('reportDate').value;
+  const reportDate = $('reportDate')?.value || new Date().toISOString().slice(0, 10);
+  if ($('salesHistoryDateFrom')) $('salesHistoryDateFrom').value = reportDate;
+  if ($('salesHistoryDateTo')) $('salesHistoryDateTo').value = reportDate;
   if (typeof loadSalesHistory === 'function') await loadSalesHistory();
 };
 
