@@ -41,6 +41,41 @@ finishSale = async function () {
   }
 };
 
+renderSuggestions = function () {
+  const box = $('productSuggestions');
+  if (!box) return;
+  box.innerHTML = '';
+
+  if (!currentSuggestions.length) {
+    box.classList.add('hidden');
+    return;
+  }
+
+  currentSuggestions.forEach((p, index) => {
+    const stock = Number(p.stock || 0);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `suggestion-item ${index === activeSuggestionIndex ? 'active' : ''} ${stock <= 0 ? 'out-of-stock' : ''}`;
+    btn.dataset.code = p.code;
+    btn.innerHTML = `
+      <span>
+        <span class="suggestion-title">${escapeHtml(p.name)}</span>
+        <span class="suggestion-meta">კოდი: ${escapeHtml(p.code)}</span>
+      </span>
+      <span class="suggestion-side">
+        <span class="suggestion-price">${money(p.salePrice)}</span>
+        <span class="stock-badge">ნაშთი: ${stock} ცალი</span>
+      </span>`;
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      selectSuggestion(index);
+    });
+    box.appendChild(btn);
+  });
+
+  box.classList.remove('hidden');
+};
+
 renderRoomBalances = function (balances, total) {
   const body = $('roomBalancesBody');
   if (!body) return;
