@@ -1,4 +1,4 @@
-// HotelMarket v1.2 patch
+// HotelMarket v1.2.1 patch
 // ჩასვი Apps Script-ში Code.gs-ის ბოლოში ან შექმენი/განაახლე ფაილი RoomDebtPatch.gs.
 
 const HM_ROOMS = [
@@ -37,7 +37,7 @@ function doPost(e) {
 
 function routeV2_(action, payload) {
   switch (action) {
-    case 'ping': return ok_({ version: '1.2.0', message: 'HotelMarket API works' });
+    case 'ping': return ok_({ version: '1.2.1', message: 'HotelMarket API works' });
     case 'setupDatabase': setupDatabase(); ensureRoomPaymentsSheet_(); ensureSalesExtraHeaders_(); return ok_({ message: 'Database is ready' });
     case 'getRooms': return ok_({ rooms: HM_ROOMS });
     case 'getProducts': return getProducts(payload);
@@ -164,13 +164,17 @@ function getDailyReportV2_(payload) {
 
 function getSalesHistoryV2_(payload) {
   payload = payload || {};
-  const date = text_(payload.date) || today_();
+  const from = text_(payload.dateFrom || payload.from || payload.date) || today_();
+  const to = text_(payload.dateTo || payload.to || payload.date) || from;
+  if (from > to) throw new Error('საწყისი თარიღი საბოლოო თარიღზე დიდი არ უნდა იყოს');
+
   const rows = dataRows_(sheet_(SHEET_NAMES.SALES));
   const costMap = getCurrentProductCostMap_();
   const history = [];
 
   rows.forEach(function (r) {
-    if (text_(r[1]) !== date || text_(r[11]) !== 'აქტიური') return;
+    const rowDate = text_(r[1]);
+    if (rowDate < from || rowDate > to || text_(r[11]) !== 'აქტიური') return;
     const code = text_(r[3]);
     const qty = num_(r[5]);
     const salePrice = num_(r[6]);
@@ -180,7 +184,7 @@ function getSalesHistoryV2_(payload) {
     const costTotal = round2_(qty * cost);
     history.push({
       saleId: text_(r[0]),
-      date: text_(r[1]),
+      date: rowDate,
       time: text_(r[2]),
       code: code,
       name: text_(r[4]),
@@ -198,7 +202,7 @@ function getSalesHistoryV2_(payload) {
   history.sort(function (a, b) {
     return (b.date + ' ' + b.time).localeCompare(a.date + ' ' + a.time);
   });
-  return ok_({ date: date, history: history });
+  return ok_({ dateFrom: from, dateTo: to, history: history });
 }
 
 function getCurrentProductCostMap_() {
