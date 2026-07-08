@@ -1,5 +1,5 @@
-// HotelMarket v1.1 patch
-// ჩასვი Apps Script-ში Code.gs-ის ბოლოში ან შექმენი ახალი ფაილი RoomDebtPatch.gs.
+// HotelMarket v1.2 patch
+// ჩასვი Apps Script-ში Code.gs-ის ბოლოში ან შექმენი/განაახლე ფაილი RoomDebtPatch.gs.
 
 const HM_ROOMS = [
   '101', '102', '103', '104',
@@ -37,8 +37,8 @@ function doPost(e) {
 
 function routeV2_(action, payload) {
   switch (action) {
-    case 'ping': return ok_({ version: '1.1.0', message: 'HotelMarket API works' });
-    case 'setupDatabase': setupDatabase(); ensureRoomPaymentsSheet_(); return ok_({ message: 'Database is ready' });
+    case 'ping': return ok_({ version: '1.2.0', message: 'HotelMarket API works' });
+    case 'setupDatabase': setupDatabase(); ensureRoomPaymentsSheet_(); ensureSalesExtraHeaders_(); return ok_({ message: 'Database is ready' });
     case 'getRooms': return ok_({ rooms: HM_ROOMS });
     case 'getProducts': return getProducts(payload);
     case 'getProduct': return getProduct(payload);
@@ -46,6 +46,7 @@ function routeV2_(action, payload) {
     case 'importRows': return importRows(payload);
     case 'processSale': return processSaleV2_(payload);
     case 'getDailyReport': return getDailyReportV2_(payload);
+    case 'getSalesHistory': return getSalesHistoryV2_(payload);
     case 'closeDay': return closeDay(payload);
     case 'adjustStock': return adjustStock(payload);
     case 'getRoomBalances': return getRoomBalancesV2_(payload);
@@ -64,6 +65,15 @@ function ensureRoomPaymentsSheet_() {
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#eef2ff');
   for (let i = 1; i <= headers.length; i++) sh.autoResizeColumn(i);
+  return sh;
+}
+
+function ensureSalesExtraHeaders_() {
+  const sh = sheet_(SHEET_NAMES.SALES);
+  const extra = ['თვითღირებულება', 'თვითღირებულება ჯამი', 'მოგება'];
+  sh.getRange(1, 13, 1, extra.length).setValues([extra]);
+  sh.getRange(1, 13, 1, extra.length).setFontWeight('bold').setBackground('#eef2ff');
+  for (let i = 13; i <= 15; i++) sh.autoResizeColumn(i);
   return sh;
 }
 
@@ -89,6 +99,7 @@ function processSaleV2_(payload) {
   try {
     setupDatabase();
     ensureRoomPaymentsSheet_();
+    ensureSalesExtraHeaders_();
 
     const merged = {};
     items.forEach(function (item) {
@@ -111,7 +122,7 @@ function processSaleV2_(payload) {
       if (product.stock < item.qty) throw new Error('არასაკმარისი ნაშთი: ' + product.name + ' / ნაშთი: ' + product.stock);
       const price = item.price > 0 ? item.price : product.salePrice;
       if (price <= 0) throw new Error('გასაყიდი ფასი არასწორია: ' + product.name);
-      return { row: found.row, product: product, qty: item.qty, price: price };
+      return { row: found.row, product: product, qty: item.qty, price: price, cost: product.avgCost };
     });
 
     const saleId = Utilities.getUuid();
@@ -125,9 +136,11 @@ function processSaleV2_(payload) {
 
     checked.forEach(function (item) {
       const lineTotal = round2_(item.qty * item.price);
+      const costTotal = round2_(item.qty * item.cost);
+      const profit = round2_(lineTotal - costTotal);
       total += lineTotal;
       itemsCount += item.qty;
-      salesSheet.appendRow([saleId, date, time, item.product.code, item.product.name, item.qty, round2_(item.price), lineTotal, paymentType, room, cashier, 'აქტიური']);
+      salesSheet.appendRow([saleId, date, time, item.product.code, item.product.name, item.qty, round2_(item.price), lineTotal, paymentType, room, cashier, 'აქტიური', round2_(item.cost), costTotal, profit]);
       productsSheet.getRange(item.row, 3).setValue(round2_(item.product.stock - item.qty));
       productsSheet.getRange(item.row, 8).setValue(stamp_());
       if (paymentType === 'ოთახზე დაწერა') {
@@ -147,6 +160,54 @@ function getDailyReportV2_(payload) {
   const date = text_(payload && payload.date) || today_();
   report.roomPayments = getRoomPaymentsSummaryV2_(date);
   return report;
+}
+
+function getSalesHistoryV2_(payload) {
+  payload = payload || {};
+  const date = text_(payload.date) || today_();
+  const rows = dataRows_(sheet_(SHEET_NAMES.SALES));
+  const costMap = getCurrentProductCostMap_();
+  const history = [];
+
+  rows.forEach(function (r) {
+    if (text_(r[1]) !== date || text_(r[11]) !== 'აქტიური') return;
+    const code = text_(r[3]);
+    const qty = num_(r[5]);
+    const salePrice = num_(r[6]);
+    const revenue = num_(r[7]);
+    const storedCost = num_(r[12]);
+    const cost = storedCost > 0 ? storedCost : (costMap[code] || 0);
+    const costTotal = round2_(qty * cost);
+    history.push({
+      saleId: text_(r[0]),
+      date: text_(r[1]),
+      time: text_(r[2]),
+      code: code,
+      name: text_(r[4]),
+      qty: qty,
+      cost: round2_(cost),
+      costTotal: costTotal,
+      salePrice: round2_(salePrice),
+      revenue: round2_(revenue),
+      paymentType: text_(r[8]),
+      room: text_(r[9]),
+      cashier: text_(r[10])
+    });
+  });
+
+  history.sort(function (a, b) {
+    return (b.date + ' ' + b.time).localeCompare(a.date + ' ' + a.time);
+  });
+  return ok_({ date: date, history: history });
+}
+
+function getCurrentProductCostMap_() {
+  const map = {};
+  const rows = dataRows_(sheet_(SHEET_NAMES.PRODUCTS));
+  rows.forEach(function (r) {
+    map[text_(r[0])] = num_(r[3]);
+  });
+  return map;
 }
 
 function getRoomPaymentsSummaryV2_(date) {
