@@ -31,6 +31,7 @@ finishSale = async function () {
     hmResetPaymentAfterSale();
     await refreshProducts();
     await loadRoomBalances();
+    if (typeof loadSalesHistory === 'function') await loadSalesHistory();
     setNotice('scanResult', `გაყიდვა დასრულდა. ჯამი: ${money(res.total)} · გადახდის ტიპი განულდა`, 'ok');
     const search = $('productSearch');
     if (search) search.focus();
@@ -39,6 +40,18 @@ finishSale = async function () {
   } finally {
     setLoading(btn, false);
   }
+};
+
+renderProducts = function () {
+  const body = $('productsBody');
+  if (!body) return;
+  body.innerHTML = '';
+  const sorted = [...products].sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0));
+  sorted.forEach((p) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(p.code)}</td><td>${escapeHtml(p.name)}</td><td>${p.stock}</td><td>${money(p.avgCost)}</td><td>${money(p.salePrice)}</td><td>${escapeHtml(p.status)}</td>`;
+    body.appendChild(tr);
+  });
 };
 
 renderSuggestions = function () {
@@ -82,30 +95,38 @@ renderRoomBalances = function (balances, total) {
   body.innerHTML = '';
   $('roomDebtTotal').textContent = money(total || 0);
 
-  const sortedBalances = [...balances].sort((a, b) => {
-    const aDebt = Number(a.balance) > 0;
-    const bDebt = Number(b.balance) > 0;
-    if (aDebt !== bDebt) return aDebt ? -1 : 1;
-    if (aDebt && bDebt && Number(b.balance) !== Number(a.balance)) return Number(b.balance) - Number(a.balance);
-    return Number(a.room) - Number(b.room);
-  });
+  const roomCardTitle = body.closest('.card')?.querySelector('h2');
+  if (roomCardTitle) roomCardTitle.textContent = 'ოთახების დავალიანება';
 
-  sortedBalances.forEach((item) => {
-    const hasDebt = Number(item.balance) > 0;
+  const onlyDebts = [...balances]
+    .filter((item) => Number(item.balance) > 0)
+    .sort((a, b) => {
+      if (Number(b.balance) !== Number(a.balance)) return Number(b.balance) - Number(a.balance);
+      return Number(a.room) - Number(b.room);
+    });
+
+  if (!onlyDebts.length) {
     const tr = document.createElement('tr');
-    tr.className = hasDebt ? 'debt-row' : 'zero-row';
+    tr.innerHTML = '<td colspan="5">ამ ეტაპზე ოთახების დავალიანება არ არის</td>';
+    body.appendChild(tr);
+    return;
+  }
+
+  onlyDebts.forEach((item) => {
+    const tr = document.createElement('tr');
+    tr.className = 'debt-row';
     tr.innerHTML = `
-      <td>${escapeHtml(item.room)}${hasDebt ? ' · დავალიანება!' : ''}</td>
+      <td>${escapeHtml(item.room)} · დავალიანება!</td>
       <td><strong>${money(item.balance)}</strong></td>
       <td>${item.itemsCount || 0}</td>
       <td>
-        <select data-room-payment="${escapeHtml(item.room)}" ${hasDebt ? '' : 'disabled'}>
+        <select data-room-payment="${escapeHtml(item.room)}">
           <option value="">აირჩიე</option>
           <option value="ქეში">ქეში</option>
           <option value="ბარათი">ბარათი</option>
         </select>
       </td>
-      <td><button class="success" data-settle-room="${escapeHtml(item.room)}" ${hasDebt ? '' : 'disabled'}>განულება</button></td>`;
+      <td><button class="success" data-settle-room="${escapeHtml(item.room)}">განულება</button></td>`;
     body.appendChild(tr);
   });
 
@@ -114,4 +135,98 @@ renderRoomBalances = function (balances, total) {
   });
 };
 
-document.addEventListener('DOMContentLoaded', hmResetPaymentAfterSale);
+function hmInsertSalesHistoryUI() {
+  if ($('salesHistoryCard')) return;
+  const reportSection = $('reports');
+  if (!reportSection) return;
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'salesHistoryCard';
+  card.innerHTML = `
+    <div class="between">
+      <h2>გატარების ისტორია</h2>
+      <button id="loadSalesHistory" class="primary">ჩამოქაჩვა</button>
+    </div>
+    <label>თარიღი</label>
+    <input id="salesHistoryDate" type="date">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>დრო</th>
+            <th>გატარება</th>
+            <th>კოდი</th>
+            <th>დასახელება</th>
+            <th>რაოდ.</th>
+            <th>თვითღირებულება</th>
+            <th>გასაყიდი ფასი</th>
+            <th>რეალიზაცია</th>
+            <th>გადახდა</th>
+            <th>ოთახი</th>
+          </tr>
+        </thead>
+        <tbody id="salesHistoryBody"></tbody>
+      </table>
+    </div>
+    <div id="salesHistoryMsg" class="notice"></div>`;
+
+  const roomCard = $('roomBalancesBody')?.closest('.card');
+  if (roomCard) roomCard.insertAdjacentElement('afterend', card);
+  else reportSection.appendChild(card);
+
+  const today = new Date().toISOString().slice(0, 10);
+  $('salesHistoryDate').value = ($('reportDate') && $('reportDate').value) || today;
+  $('loadSalesHistory').addEventListener('click', loadSalesHistory);
+}
+
+async function loadSalesHistory() {
+  try {
+    const date = $('salesHistoryDate')?.value || $('reportDate')?.value || new Date().toISOString().slice(0, 10);
+    const res = await api('getSalesHistory', { date });
+    renderSalesHistory(res.history || []);
+    setNotice('salesHistoryMsg', `ნაჩვენებია ${date} დღის გატარებები`, 'ok');
+  } catch (err) {
+    setNotice('salesHistoryMsg', err.message, 'bad');
+  }
+}
+
+function renderSalesHistory(history) {
+  const body = $('salesHistoryBody');
+  if (!body) return;
+  body.innerHTML = '';
+  if (!history.length) {
+    body.innerHTML = '<tr><td colspan="10">ამ თარიღზე გატარებები არ არის</td></tr>';
+    return;
+  }
+
+  history.forEach((row) => {
+    const tr = document.createElement('tr');
+    const shortId = row.saleId ? row.saleId.slice(0, 8) : '';
+    tr.innerHTML = `
+      <td>${escapeHtml(row.time)}</td>
+      <td>${escapeHtml(shortId)}</td>
+      <td>${escapeHtml(row.code)}</td>
+      <td>${escapeHtml(row.name)}</td>
+      <td>${row.qty}</td>
+      <td>${money(row.cost)}</td>
+      <td>${money(row.salePrice)}</td>
+      <td><strong>${money(row.revenue)}</strong></td>
+      <td>${escapeHtml(row.paymentType)}</td>
+      <td>${escapeHtml(row.room || '')}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+const hmOldLoadReport = loadReport;
+loadReport = async function () {
+  await hmOldLoadReport();
+  if ($('salesHistoryDate') && $('reportDate')) $('salesHistoryDate').value = $('reportDate').value;
+  if (typeof loadSalesHistory === 'function') await loadSalesHistory();
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  hmResetPaymentAfterSale();
+  hmInsertSalesHistoryUI();
+  if (typeof loadSalesHistory === 'function') loadSalesHistory();
+});
