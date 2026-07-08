@@ -129,6 +129,9 @@ input, select {
   background: #eff6ff;
   border-color: #bfdbfe;
 }
+.suggestion-item.out-of-stock {
+  opacity: 0.7;
+}
 .suggestion-title {
   display: block;
   font-weight: 900;
@@ -140,10 +143,30 @@ input, select {
   font-size: 12px;
   font-weight: 600;
 }
+.suggestion-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  white-space: nowrap;
+}
 .suggestion-price {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   white-space: nowrap;
+}
+.stock-badge {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 900;
+}
+.out-of-stock .stock-badge {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 .small { font-size: 12px; margin-top: 6px; }
 
