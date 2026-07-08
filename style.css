@@ -178,7 +178,13 @@ table { width: 100%; border-collapse: collapse; min-width: 650px; }
 th, td { padding: 11px 10px; border-bottom: 1px solid var(--border); text-align: left; }
 th { background: #f8fafc; color: #475569; font-size: 13px; }
 td input, td select { padding: 8px; }
-.debt-row { background: #fff7ed; }
+.debt-row {
+  background: #fee2e2;
+  color: #7f1d1d;
+  font-weight: 800;
+}
+.debt-row td { border-bottom-color: #fecaca; }
+.debt-row strong { color: #b91c1c; }
 .zero-row { color: #64748b; }
 
 .notice { min-height: 22px; margin-top: 12px; color: var(--muted); }
