@@ -1,4 +1,4 @@
-// HotelMarket v1.2.3 patch
+// HotelMarket v1.2.4 patch
 // განაახლე Apps Script-ში ეს ფაილი და გააკეთე New version Deploy.
 
 const HM_ROOMS = [
@@ -37,7 +37,7 @@ function doPost(e) {
 
 function routeV2_(action, payload) {
   switch (action) {
-    case 'ping': return ok_({ version: '1.2.3', message: 'HotelMarket API works' });
+    case 'ping': return ok_({ version: '1.2.4', message: 'HotelMarket API works' });
     case 'setupDatabase': setupDatabase(); ensureRoomPaymentsSheet_(); ensureSalesExtraHeaders_(); return ok_({ message: 'Database is ready' });
     case 'getRooms': return ok_({ rooms: HM_ROOMS });
     case 'getProducts': return getProducts(payload);
@@ -47,6 +47,7 @@ function routeV2_(action, payload) {
     case 'processSale': return processSaleV2_(payload);
     case 'getDailyReport': return getDailyReportV2_(payload);
     case 'getSalesHistory': return getSalesHistoryV2_(payload);
+    case 'getSalesRows': return getSalesRowsFastV2_(payload);
     case 'closeDay': return closeDay(payload);
     case 'adjustStock': return adjustStock(payload);
     case 'getRoomBalances': return getRoomBalancesV2_(payload);
@@ -183,35 +184,30 @@ function getDailyReportV2_(payload) {
   return report;
 }
 
-function getSalesHistoryV2_(payload) {
+function getSalesRowsFastV2_(payload) {
   payload = payload || {};
-  const from = hmDateKey_(payload.dateFrom || payload.from || payload.date) || today_();
-  const to = hmDateKey_(payload.dateTo || payload.to || payload.date) || from;
-  if (from > to) throw new Error('საწყისი თარიღი საბოლოო თარიღზე დიდი არ უნდა იყოს');
-
+  const limit = Math.min(Math.max(num_(payload.limit || 2000), 1), 5000);
   const sh = sheet_(SHEET_NAMES.SALES);
   const last = sh.getLastRow();
-  if (last < 2) return ok_({ dateFrom: from, dateTo: to, history: [], scannedRows: 0 });
+  if (last < 2) return ok_({ sales: [], count: 0 });
 
-  const values = sh.getRange(2, 1, last - 1, Math.max(15, sh.getLastColumn())).getDisplayValues();
-  const costMap = getCurrentProductCostMapFast_();
-  const history = [];
+  const start = Math.max(2, last - limit + 1);
+  const count = last - start + 1;
+  const values = sh.getRange(start, 1, count, Math.max(15, sh.getLastColumn())).getDisplayValues();
+  const sales = [];
 
   for (let i = values.length - 1; i >= 0; i--) {
     const r = values[i];
-    const rowDate = hmDateKey_(r[1]);
-    if (!rowDate || rowDate < from || rowDate > to || !hmIsActiveSale_(r[11])) continue;
-
+    if (!hmIsActiveSale_(r[11])) continue;
     const code = text_(r[3]);
     const qty = num_(r[5]);
     const salePrice = num_(r[6]);
     const revenue = num_(r[7]);
-    const storedCost = num_(r[12]);
-    const cost = storedCost > 0 ? storedCost : (costMap[code] || 0);
-
-    history.push({
+    const cost = num_(r[12]);
+    sales.push({
       saleId: text_(r[0]),
-      date: rowDate,
+      date: hmDateKey_(r[1]),
+      rawDate: text_(r[1]),
       time: text_(r[2]),
       code: code,
       name: text_(r[4]),
@@ -226,23 +222,16 @@ function getSalesHistoryV2_(payload) {
     });
   }
 
-  history.sort(function (a, b) {
-    return (b.date + ' ' + b.time).localeCompare(a.date + ' ' + a.time);
-  });
-
-  return ok_({ dateFrom: from, dateTo: to, history: history, scannedRows: values.length });
+  return ok_({ sales: sales, count: sales.length, scannedRows: count });
 }
 
-function getCurrentProductCostMapFast_() {
-  const map = {};
-  const sh = sheet_(SHEET_NAMES.PRODUCTS);
-  const last = sh.getLastRow();
-  if (last < 2) return map;
-  const rows = sh.getRange(2, 1, last - 1, 4).getDisplayValues();
-  rows.forEach(function (r) {
-    map[text_(r[0])] = num_(r[3]);
-  });
-  return map;
+function getSalesHistoryV2_(payload) {
+  payload = payload || {};
+  const from = hmDateKey_(payload.dateFrom || payload.from || payload.date) || today_();
+  const to = hmDateKey_(payload.dateTo || payload.to || payload.date) || from;
+  const all = getSalesRowsFastV2_({ limit: payload.limit || 5000 }).sales || [];
+  const history = all.filter(function (r) { return r.date >= from && r.date <= to; });
+  return ok_({ dateFrom: from, dateTo: to, history: history });
 }
 
 function getRoomPaymentsSummaryV2_(date) {
