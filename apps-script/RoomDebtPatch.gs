@@ -1,4 +1,4 @@
-// HotelMarket v1.2.1 patch
+// HotelMarket v1.2.2 patch
 // ჩასვი Apps Script-ში Code.gs-ის ბოლოში ან შექმენი/განაახლე ფაილი RoomDebtPatch.gs.
 
 const HM_ROOMS = [
@@ -37,7 +37,7 @@ function doPost(e) {
 
 function routeV2_(action, payload) {
   switch (action) {
-    case 'ping': return ok_({ version: '1.2.1', message: 'HotelMarket API works' });
+    case 'ping': return ok_({ version: '1.2.2', message: 'HotelMarket API works' });
     case 'setupDatabase': setupDatabase(); ensureRoomPaymentsSheet_(); ensureSalesExtraHeaders_(); return ok_({ message: 'Database is ready' });
     case 'getRooms': return ok_({ rooms: HM_ROOMS });
     case 'getProducts': return getProducts(payload);
@@ -57,10 +57,9 @@ function routeV2_(action, payload) {
 
 function ensureRoomPaymentsSheet_() {
   const ss = ss_();
-  const name = HM_ROOM_PAYMENTS_SHEET;
   const headers = ['გადახდის ID', 'თარიღი', 'დრო', 'ოთახი', 'თანხა', 'გადახდის ტიპი', 'მოლარე', 'კომენტარი'];
-  let sh = ss.getSheetByName(name);
-  if (!sh) sh = ss.insertSheet(name);
+  let sh = ss.getSheetByName(HM_ROOM_PAYMENTS_SHEET);
+  if (!sh) sh = ss.insertSheet(HM_ROOM_PAYMENTS_SHEET);
   sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#eef2ff');
@@ -79,6 +78,36 @@ function ensureSalesExtraHeaders_() {
 
 function hmIncludes_(arr, value) {
   return arr.indexOf(text_(value)) !== -1;
+}
+
+function hmDateKey_(value) {
+  if (value === null || value === undefined || value === '') return '';
+
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, CONFIG.TIMEZONE || 'Asia/Tbilisi', 'yyyy-MM-dd');
+  }
+
+  let s = String(value).trim();
+  if (!s) return '';
+  s = s.replace(/\./g, '-').replace(/\//g, '-');
+
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+
+  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return Utilities.formatDate(d, CONFIG.TIMEZONE || 'Asia/Tbilisi', 'yyyy-MM-dd');
+  }
+
+  return s;
+}
+
+function hmIsActiveSale_(status) {
+  const s = text_(status);
+  return s === '' || s === 'აქტიური';
 }
 
 function processSaleV2_(payload) {
@@ -157,15 +186,15 @@ function processSaleV2_(payload) {
 function getDailyReportV2_(payload) {
   ensureRoomPaymentsSheet_();
   const report = getDailyReport(payload);
-  const date = text_(payload && payload.date) || today_();
+  const date = hmDateKey_(payload && payload.date) || today_();
   report.roomPayments = getRoomPaymentsSummaryV2_(date);
   return report;
 }
 
 function getSalesHistoryV2_(payload) {
   payload = payload || {};
-  const from = text_(payload.dateFrom || payload.from || payload.date) || today_();
-  const to = text_(payload.dateTo || payload.to || payload.date) || from;
+  const from = hmDateKey_(payload.dateFrom || payload.from || payload.date) || today_();
+  const to = hmDateKey_(payload.dateTo || payload.to || payload.date) || from;
   if (from > to) throw new Error('საწყისი თარიღი საბოლოო თარიღზე დიდი არ უნდა იყოს');
 
   const rows = dataRows_(sheet_(SHEET_NAMES.SALES));
@@ -173,8 +202,8 @@ function getSalesHistoryV2_(payload) {
   const history = [];
 
   rows.forEach(function (r) {
-    const rowDate = text_(r[1]);
-    if (rowDate < from || rowDate > to || text_(r[11]) !== 'აქტიური') return;
+    const rowDate = hmDateKey_(r[1]);
+    if (!rowDate || rowDate < from || rowDate > to || !hmIsActiveSale_(r[11])) return;
     const code = text_(r[3]);
     const qty = num_(r[5]);
     const salePrice = num_(r[6]);
@@ -215,11 +244,12 @@ function getCurrentProductCostMap_() {
 }
 
 function getRoomPaymentsSummaryV2_(date) {
+  const dateKey = hmDateKey_(date);
   const rows = dataRows_(ensureRoomPaymentsSheet_());
   const byPayment = { 'ქეში': 0, 'ბარათი': 0 };
   let total = 0;
   rows.forEach(function (r) {
-    if (text_(r[1]) !== date) return;
+    if (hmDateKey_(r[1]) !== dateKey) return;
     const amount = num_(r[4]);
     const paymentType = text_(r[5]);
     total += amount;
