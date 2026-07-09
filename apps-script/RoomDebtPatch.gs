@@ -1,5 +1,5 @@
-// HotelMarket v1.2.2 patch
-// ჩასვი Apps Script-ში Code.gs-ის ბოლოში ან შექმენი/განაახლე ფაილი RoomDebtPatch.gs.
+// HotelMarket v1.2.3 patch
+// განაახლე Apps Script-ში ეს ფაილი და გააკეთე New version Deploy.
 
 const HM_ROOMS = [
   '101', '102', '103', '104',
@@ -37,7 +37,7 @@ function doPost(e) {
 
 function routeV2_(action, payload) {
   switch (action) {
-    case 'ping': return ok_({ version: '1.2.2', message: 'HotelMarket API works' });
+    case 'ping': return ok_({ version: '1.2.3', message: 'HotelMarket API works' });
     case 'setupDatabase': setupDatabase(); ensureRoomPaymentsSheet_(); ensureSalesExtraHeaders_(); return ok_({ message: 'Database is ready' });
     case 'getRooms': return ok_({ rooms: HM_ROOMS });
     case 'getProducts': return getProducts(payload);
@@ -82,26 +82,18 @@ function hmIncludes_(arr, value) {
 
 function hmDateKey_(value) {
   if (value === null || value === undefined || value === '') return '';
-
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, CONFIG.TIMEZONE || 'Asia/Tbilisi', 'yyyy-MM-dd');
   }
-
   let s = String(value).trim();
   if (!s) return '';
   s = s.replace(/\./g, '-').replace(/\//g, '-');
-
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
-
   m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
   if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
-
   const d = new Date(s);
-  if (!isNaN(d.getTime())) {
-    return Utilities.formatDate(d, CONFIG.TIMEZONE || 'Asia/Tbilisi', 'yyyy-MM-dd');
-  }
-
+  if (!isNaN(d.getTime())) return Utilities.formatDate(d, CONFIG.TIMEZONE || 'Asia/Tbilisi', 'yyyy-MM-dd');
   return s;
 }
 
@@ -197,20 +189,26 @@ function getSalesHistoryV2_(payload) {
   const to = hmDateKey_(payload.dateTo || payload.to || payload.date) || from;
   if (from > to) throw new Error('საწყისი თარიღი საბოლოო თარიღზე დიდი არ უნდა იყოს');
 
-  const rows = dataRows_(sheet_(SHEET_NAMES.SALES));
-  const costMap = getCurrentProductCostMap_();
+  const sh = sheet_(SHEET_NAMES.SALES);
+  const last = sh.getLastRow();
+  if (last < 2) return ok_({ dateFrom: from, dateTo: to, history: [], scannedRows: 0 });
+
+  const values = sh.getRange(2, 1, last - 1, Math.max(15, sh.getLastColumn())).getDisplayValues();
+  const costMap = getCurrentProductCostMapFast_();
   const history = [];
 
-  rows.forEach(function (r) {
+  for (let i = values.length - 1; i >= 0; i--) {
+    const r = values[i];
     const rowDate = hmDateKey_(r[1]);
-    if (!rowDate || rowDate < from || rowDate > to || !hmIsActiveSale_(r[11])) return;
+    if (!rowDate || rowDate < from || rowDate > to || !hmIsActiveSale_(r[11])) continue;
+
     const code = text_(r[3]);
     const qty = num_(r[5]);
     const salePrice = num_(r[6]);
     const revenue = num_(r[7]);
     const storedCost = num_(r[12]);
     const cost = storedCost > 0 ? storedCost : (costMap[code] || 0);
-    const costTotal = round2_(qty * cost);
+
     history.push({
       saleId: text_(r[0]),
       date: rowDate,
@@ -219,24 +217,28 @@ function getSalesHistoryV2_(payload) {
       name: text_(r[4]),
       qty: qty,
       cost: round2_(cost),
-      costTotal: costTotal,
+      costTotal: round2_(qty * cost),
       salePrice: round2_(salePrice),
       revenue: round2_(revenue),
       paymentType: text_(r[8]),
       room: text_(r[9]),
       cashier: text_(r[10])
     });
-  });
+  }
 
   history.sort(function (a, b) {
     return (b.date + ' ' + b.time).localeCompare(a.date + ' ' + a.time);
   });
-  return ok_({ dateFrom: from, dateTo: to, history: history });
+
+  return ok_({ dateFrom: from, dateTo: to, history: history, scannedRows: values.length });
 }
 
-function getCurrentProductCostMap_() {
+function getCurrentProductCostMapFast_() {
   const map = {};
-  const rows = dataRows_(sheet_(SHEET_NAMES.PRODUCTS));
+  const sh = sheet_(SHEET_NAMES.PRODUCTS);
+  const last = sh.getLastRow();
+  if (last < 2) return map;
+  const rows = sh.getRange(2, 1, last - 1, 4).getDisplayValues();
   rows.forEach(function (r) {
     map[text_(r[0])] = num_(r[3]);
   });
