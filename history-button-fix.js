@@ -2,6 +2,28 @@ function hmDateKeyBrowser(value) {
   return String(value || '').trim().replace(/\./g, '-').replace(/\//g, '-').slice(0, 10);
 }
 
+function hmCsvCell(value) {
+  const s = String(value ?? '');
+  return `"${s.replaceAll('"', '""')}"`;
+}
+
+function hmDownloadCsv(filename, headers, rows) {
+  const csv = [headers, ...rows].map((r) => r.map(hmCsvCell).join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function hmFilterSalesByPeriod(allSales, dateFrom, dateTo) {
+  return (allSales || []).filter((row) => {
+    const d = hmDateKeyBrowser(row.date || row.rawDate);
+    return d >= dateFrom && d <= dateTo;
+  });
+}
+
 function hmRenderSalesHistoryRows(history, dateFrom, dateTo, scannedRows) {
   const body = document.getElementById('salesHistoryBody');
   const msg = document.getElementById('salesHistoryMsg');
@@ -36,6 +58,21 @@ function hmRenderSalesHistoryRows(history, dateFrom, dateTo, scannedRows) {
   }
 }
 
+function hmGetSalesPeriod() {
+  const today = new Date().toISOString().slice(0, 10);
+  const dateFrom = document.getElementById('salesHistoryDateFrom')?.value || document.getElementById('reportDate')?.value || today;
+  const dateTo = document.getElementById('salesHistoryDateTo')?.value || dateFrom;
+  return { dateFrom, dateTo };
+}
+
+async function hmFetchSalesRowsForPeriod() {
+  const { dateFrom, dateTo } = hmGetSalesPeriod();
+  const res = await api('getSalesRows', { limit: 5000 });
+  const allSales = res.sales || [];
+  const history = hmFilterSalesByPeriod(allSales, dateFrom, dateTo);
+  return { dateFrom, dateTo, history, scannedRows: res.scannedRows || allSales.length };
+}
+
 async function hmLoadSalesHistoryDirect() {
   const body = document.getElementById('salesHistoryBody');
   const msg = document.getElementById('salesHistoryMsg');
@@ -48,18 +85,8 @@ async function hmLoadSalesHistoryDirect() {
       msg.className = 'notice';
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const dateFrom = document.getElementById('salesHistoryDateFrom')?.value || document.getElementById('reportDate')?.value || today;
-    const dateTo = document.getElementById('salesHistoryDateTo')?.value || dateFrom;
-
-    const res = await api('getSalesRows', { limit: 5000 });
-    const allSales = res.sales || [];
-    const history = allSales.filter((row) => {
-      const d = hmDateKeyBrowser(row.date || row.rawDate);
-      return d >= dateFrom && d <= dateTo;
-    });
-
-    hmRenderSalesHistoryRows(history, dateFrom, dateTo, res.scannedRows || allSales.length);
+    const result = await hmFetchSalesRowsForPeriod();
+    hmRenderSalesHistoryRows(result.history, result.dateFrom, result.dateTo, result.scannedRows);
   } catch (err) {
     if (body) body.innerHTML = `<tr><td colspan="11">შეცდომა: ${escapeHtml(err.message || err)}</td></tr>`;
     if (msg) {
@@ -71,7 +98,86 @@ async function hmLoadSalesHistoryDirect() {
   }
 }
 
+async function hmDownloadSalesCsv() {
+  const msg = document.getElementById('salesHistoryMsg');
+  const btn = document.getElementById('downloadSalesCsv');
+
+  try {
+    if (btn) btn.disabled = true;
+    if (msg) {
+      msg.textContent = 'CSV ფაილი მზადდება...';
+      msg.className = 'notice';
+    }
+
+    const result = await hmFetchSalesRowsForPeriod();
+    const headers = [
+      'თარიღი',
+      'დრო',
+      'გატარების ID',
+      'კოდი',
+      'დასახელება',
+      'რაოდენობა',
+      'თვითღირებულება',
+      'თვითღირებულება ჯამი',
+      'გასაყიდი ფასი',
+      'რეალიზაცია',
+      'გადახდის ტიპი',
+      'ოთახი',
+      'მოლარე'
+    ];
+    const rows = result.history.map((row) => [
+      row.date || row.rawDate || '',
+      row.time || '',
+      row.saleId || '',
+      row.code || '',
+      row.name || '',
+      row.qty || 0,
+      Number(row.cost || 0).toFixed(2),
+      Number(row.costTotal || 0).toFixed(2),
+      Number(row.salePrice || 0).toFixed(2),
+      Number(row.revenue || 0).toFixed(2),
+      row.paymentType || '',
+      row.room || '',
+      row.cashier || ''
+    ]);
+
+    hmDownloadCsv(`realizacia_${result.dateFrom}_${result.dateTo}.csv`, headers, rows);
+    hmRenderSalesHistoryRows(result.history, result.dateFrom, result.dateTo, result.scannedRows);
+
+    if (msg) {
+      msg.textContent = `CSV ჩამოიტვირთა · პერიოდი: ${result.dateFrom} - ${result.dateTo} · ჩანაწერი: ${result.history.length}`;
+      msg.className = 'notice ok';
+    }
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message || String(err);
+      msg.className = 'notice bad';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 window.loadSalesHistory = hmLoadSalesHistoryDirect;
+window.downloadSalesCsv = hmDownloadSalesCsv;
+
+function hmEnsureSalesCsvButton() {
+  if (document.getElementById('downloadSalesCsv')) return;
+  const loadBtn = document.getElementById('loadSalesHistory') || document.getElementById('salesHistoryFetchBtn');
+  if (!loadBtn) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'downloadSalesCsv';
+  btn.type = 'button';
+  btn.className = 'ghost';
+  btn.textContent = 'რეალიზაციის CSV ჩამოტვირთვა';
+  btn.addEventListener('click', function (e) {
+    e.preventDefault();
+    hmDownloadSalesCsv();
+  });
+
+  loadBtn.insertAdjacentElement('afterend', btn);
+}
 
 function hmBindHistoryButtonFix() {
   const btn = document.getElementById('loadSalesHistory') || document.getElementById('salesHistoryFetchBtn');
@@ -82,6 +188,7 @@ function hmBindHistoryButtonFix() {
       hmLoadSalesHistoryDirect();
     });
   }
+  hmEnsureSalesCsvButton();
 }
 
 document.addEventListener('click', function (e) {
